@@ -1,0 +1,1 @@
+"""Safety gate (keyword + semantic)."""

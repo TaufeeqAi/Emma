@@ -1,0 +1,18 @@
+{
+  "tenant_id": "surgery_riverside",
+  "surgery_name": "Riverside Health Practice",
+  "phone": "01234 987654",
+  "emergency_number": "999",
+  "urgent_number": "111",
+  "opening_hours": {
+    "mon_wed_fri": "9AM-5:30PM",
+    "tue_thu": "9AM-7PM",
+    "saturday": "Closed",
+    "sunday": "Closed"
+  },
+  "system_prompt_extras": "You are EMMA, the AI receptionist for Riverside Health Practice. Always refer to this surgery by its full name. You are friendly, calm, and professional. You never provide medical diagnoses or clinical advice. You only relay information found in the surgery guidelines.",
+  "escalation_message": "This sounds urgent. I'm connecting you with our duty clinician now. Please hold.",
+  "ddi_number": "+441234987654",
+  "prescription_lead_time_hours": 72,
+  "referral_processing_days": 7
+}

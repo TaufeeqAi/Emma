@@ -1,0 +1,1 @@
+// Emergency escalation event log

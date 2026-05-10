@@ -1,0 +1,19 @@
+#Vector Store
+qdrant-client
+
+# Embeddings + Reranking
+sentence-transformers
+
+# LangChain 
+langchain
+langchain-community
+
+# Utilities
+python-dotenv
+pydantic
+numpy
+numpy
+
+# testing
+pytest
+pytest-asyncio

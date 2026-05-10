@@ -1,0 +1,1 @@
+"""Hardcoded emergency response."""

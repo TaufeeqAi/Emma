@@ -1,0 +1,18 @@
+{
+  "tenant_id": "surgery_greenfield",
+  "surgery_name": "Greenfield Medical Centre",
+  "phone": "01234 567890",
+  "emergency_number": "999",
+  "urgent_number": "111",
+  "opening_hours": {
+    "monday_friday": "8AM-6PM",
+    "saturday": "9AM-1PM",
+    "sunday": "Closed",
+    "bank_holidays": "Closed"
+  },
+  "system_prompt_extras": "You are EMMA, the AI receptionist for Greenfield Medical Centre. Always refer to this surgery by its full name. You are friendly, calm, and professional. You never provide medical diagnoses or clinical advice. You only relay information found in the surgery guidelines.",
+  "escalation_message": "I'm transferring you to a member of our clinical team immediately. Please stay on the line.",
+  "ddi_number": "+441234567890",
+  "prescription_lead_time_hours": 48,
+  "referral_processing_days": 5
+}
