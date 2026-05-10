@@ -43,9 +43,10 @@ class SurgeryRetriever:
         self,
         top_k_retrieval: int = TOP_K_RETRIEVAL,
         rerank_top_k: int = RERANK_TOP_K,
+        embedder: Optional[EmbeddingModel] = None,
     ) -> None:
         self._client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        self._embedder = EmbeddingModel()
+        self._embedder = embedder or EmbeddingModel()
         logger.info("Loading cross-encoder reranker: %s", self._RERANKER_MODEL)
         self._reranker = CrossEncoder(self._RERANKER_MODEL)
         self.top_k_retrieval = top_k_retrieval

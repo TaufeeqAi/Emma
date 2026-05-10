@@ -1,0 +1,93 @@
+# User intent definitions
+
+define user ask for diagnosis
+  "what's wrong with me"
+  "do I have diabetes"
+  "do I have cancer"
+  "what illness do I have"
+  "what condition do I have"
+  "is it serious"
+  "could it be"
+  "diagnose me"
+  "what disease"
+  "is this a symptom of"
+
+define user ask about medication
+  "what medication should I take"
+  "should I take ibuprofen"
+  "what dose should I take"
+  "is it safe to take"
+  "can I mix"
+  "what painkiller"
+  "should I stop taking"
+  "is this medication safe"
+  "what's the side effect"
+
+define user ask for treatment
+  "what treatment do I need"
+  "how do I treat"
+  "should I go to hospital"
+  "do I need surgery"
+  "what should I do for my"
+  "will I need an operation"
+  "what therapy"
+
+define user ask clinical interpretation
+  "what do my results mean"
+  "is my blood pressure normal"
+  "are my results bad"
+  "what does the test show"
+  "is my reading dangerous"
+
+# Bot response definitions 
+
+define bot refuse and redirect to gp
+  "I'm not able to provide a medical assessment. For any health concerns,
+   I'd recommend booking an appointment to speak with one of our GPs.
+   If your concern is urgent, please call 111 or, in an emergency, 999."
+
+define bot refuse medication advice
+  "I'm not able to advise on medication — that's something to discuss
+   directly with your GP or a pharmacist. Would you like me to help you
+   book an appointment instead?"
+
+define bot refuse treatment advice
+  "Treatment decisions need to be made with a clinician who knows your
+   full medical history. I can help you book an appointment with a GP,
+   or you can call 111 for urgent advice."
+
+define bot refuse clinical interpretation
+  "Interpreting medical results isn't something I'm able to do —
+   please book a follow-up appointment with your GP, who can explain
+   your results in the context of your health. Shall I help with that?"
+
+define bot log only
+  "I understand you have a medical question. I'm only able to help with
+   administrative matters like appointments and opening hours. For medical
+   questions, your GP is the right person to speak with."
+
+# Flow definitions
+
+define flow refuse medical diagnosis
+  user ask for diagnosis
+  bot refuse and redirect to gp
+
+define flow refuse medication advice
+  user ask about medication
+  bot refuse medication advice
+
+define flow refuse treatment recommendations
+  user ask for treatment
+  bot refuse treatment advice
+
+define flow refuse clinical interpretation
+  user ask clinical interpretation
+  bot refuse clinical interpretation
+
+define flow log diagnosis request
+  user ask for diagnosis
+  bot log only
+
+define flow log medication request
+  user ask about medication
+  bot log only

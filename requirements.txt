@@ -3,16 +3,25 @@ qdrant-client
 
 # Embeddings + Reranking
 sentence-transformers
+scikit-learn
 
-# LangChain 
+# LangChain + langgraph
 langchain
 langchain-community
+langchain-groq
+langgraph
+
+#LLM
+groq
+
+# ── Safety
+nemoguardrails
 
 # Utilities
 python-dotenv
 pydantic
 numpy
-numpy
+
 
 # testing
 pytest
