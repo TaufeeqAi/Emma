@@ -29,12 +29,22 @@ uvicorn[standard]
 websockets
 python-multipart
 
+# ── Observability 
+langfuse==2.57.4
+
+# ── Evaluation 
+ragas        
+datasets    
+deepeval       
+openai       
+
 # Utilities
 python-dotenv
 pydantic
 numpy
 pydantic
 aiofiles
+tabulate
 
 # testing
 pytest

@@ -1,5 +1,7 @@
 
 services:
+
+# ── Vector Database
   qdrant:
     image: qdrant/qdrant:v1.17.1       
     container_name: emma_qdrant
@@ -16,7 +18,50 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  
+   # ── Langfuse Observability Database 
+  postgres:
+    image: postgres:15-alpine           
+    container_name: emma_postgres
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Langfuse Observability Platform 
+  langfuse:
+    image: langfuse/langfuse:2          
+    container_name: emma_langfuse
+    ports:
+      - "3001:3000"                    
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      NEXTAUTH_SECRET: emma-clone-nextauth-secret-change-in-production
+      NEXTAUTH_URL: http://localhost:3001
+      SALT: emma-clone-salt-change-in-production
+      TELEMETRY_ENABLED: "false"        # Disable telemetry in dev
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy      # Wait for Postgres to be ready
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s      
 
 volumes:
   qdrant_storage:
+    driver: local
+  postgres_data:
     driver: local

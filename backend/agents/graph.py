@@ -3,15 +3,23 @@ from typing import Literal
 
 from langgraph.graph import END, StateGraph
 
-from backend.agents.escalation_handler import escalation_handler
-from backend.agents.response_agent import response_agent
-from backend.agents.retrieval_agent import retrieval_agent
-from backend.agents.safety_agent import safety_gate_agent
 from backend.agents.state import AgentState
-from backend.agents.verification_agent import verification_agent
+from backend.observability.langfuse_client import trace_agent_call
+
+
+from backend.agents.escalation_handler import escalation_handler as _escalation_handler
+from backend.agents.response_agent import response_agent as _response_agent
+from backend.agents.retrieval_agent import retrieval_agent as _retrieval_agent
+from backend.agents.safety_agent import safety_gate_agent as _safety_gate_agent
+from backend.agents.verification_agent import verification_agent as _verification_agent
 
 logger = logging.getLogger(__name__)
 
+safety_gate_agent   = trace_agent_call("safety_gate")(_safety_gate_agent)
+retrieval_agent     = trace_agent_call("retrieval")(_retrieval_agent)
+response_agent      = trace_agent_call("response")(_response_agent)
+verification_agent  = trace_agent_call("verification")(_verification_agent)
+escalation_handler  = trace_agent_call("escalation")(_escalation_handler)
 
 # Routing function 
 
@@ -64,7 +72,7 @@ def build_emma_graph():
         result = graph.invoke(make_initial_state("opening hours?", "surgery_greenfield"))
         print(result["final_response"])
     """
-    logger.info("Building EMMA LangGraph pipeline...")
+    logger.info("Building EMMA LangGraph pipeline with langfuse tracing...")
 
     graph = StateGraph(AgentState)
 
@@ -97,7 +105,7 @@ def build_emma_graph():
     graph.add_edge("escalation", END)
 
     compiled = graph.compile()
-    logger.info("EMMA LangGraph pipeline compiled successfully.")
+    logger.info("EMMA LangGraph pipeline compiled successfully with Langfuse tracing.")
     return compiled
 
 

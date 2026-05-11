@@ -4,3 +4,5 @@ venv/
 .venv/
 diagnostic.py
 test_model.py
+test_langfuse.py
+eval_results/

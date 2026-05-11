@@ -90,6 +90,38 @@ CORS_ORIGINS: list[str] = os.getenv(
     "CORS_ORIGINS", "http://localhost:3000"
 ).split(",")
 
+# ── Langfuse
+LANGFUSE_PUBLIC_KEY: Optional[str] = os.getenv("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_SECRET_KEY: Optional[str] = os.getenv("LANGFUSE_SECRET_KEY")
+LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "http://localhost:3001")
+
+# Langfuse is optional — pipeline runs without it (graceful degradation).
+# Set to False to disable tracing entirely (e.g. during local unit tests).
+LANGFUSE_ENABLED: bool = bool(
+    LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY
+)
+
+# ── Evaluation Thresholds 
+# CI pipeline fails if RAGAS scores drop below these values.
+# Tuned to reflect baseline on 2 mock surgery documents.
+RAGAS_FAITHFULNESS_THRESHOLD: float = float(
+    os.getenv("RAGAS_FAITHFULNESS_THRESHOLD", "0.80")
+)
+RAGAS_ANSWER_RELEVANCY_THRESHOLD: float = float(
+    os.getenv("RAGAS_ANSWER_RELEVANCY_THRESHOLD", "0.75")
+)
+RAGAS_CONTEXT_PRECISION_THRESHOLD: float = float(
+    os.getenv("RAGAS_CONTEXT_PRECISION_THRESHOLD", "0.70")
+)
+RAGAS_CONTEXT_RECALL_THRESHOLD: float = float(
+    os.getenv("RAGAS_CONTEXT_RECALL_THRESHOLD", "0.70")
+)
+
+# ── Evaluation result output directory 
+EVAL_RESULTS_DIR: Path = ROOT_DIR / "eval_results"
+EVAL_RESULTS_DIR.mkdir(exist_ok=True)
+
+
 def load_tenant_config(tenant_id: str) -> dict:
     """
     Load and validate a surgery's JSON config file.
