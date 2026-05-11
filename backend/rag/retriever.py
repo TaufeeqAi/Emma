@@ -16,6 +16,19 @@ from backend.rag.embedder import EmbeddingModel
 
 logger = logging.getLogger(__name__)
 
+_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+_RERANK_SCORE_THRESHOLD = -3.0
+
+_reranker_instance: Optional[CrossEncoder] = None
+
+def _get_reranker() -> CrossEncoder:
+    """Lazy-load reranker singleton."""
+    global _reranker_instance
+    if _reranker_instance is None:
+        logger.info("Loading cross-encoder reranker: %s (ONE TIME)", _RERANKER_MODEL)
+        _reranker_instance = CrossEncoder(_RERANKER_MODEL)
+        logger.info("Reranker loaded successfully.")
+    return _reranker_instance
 
 class SurgeryRetriever:
     """
@@ -35,10 +48,6 @@ class SurgeryRetriever:
       maintaining protection against false positives (irrelevant context).
     """
 
-    _RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-    
-    _RERANK_SCORE_THRESHOLD = -3.0
-
     def __init__(
         self,
         top_k_retrieval: int = TOP_K_RETRIEVAL,
@@ -47,13 +56,12 @@ class SurgeryRetriever:
     ) -> None:
         self._client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
         self._embedder = embedder or EmbeddingModel()
-        logger.info("Loading cross-encoder reranker: %s", self._RERANKER_MODEL)
-        self._reranker = CrossEncoder(self._RERANKER_MODEL)
+        self._reranker = _get_reranker()
         self.top_k_retrieval = top_k_retrieval
         self.rerank_top_k = rerank_top_k
         logger.info(
             "SurgeryRetriever ready | top_k=%d rerank_k=%d rerank_threshold=%.2f",
-            top_k_retrieval, rerank_top_k, self._RERANK_SCORE_THRESHOLD,
+            top_k_retrieval, rerank_top_k, _RERANK_SCORE_THRESHOLD,
         )
 
     def retrieve(
@@ -90,7 +98,7 @@ class SurgeryRetriever:
         # SAFETY FILTER: Only keep results the cross-encoder approves
         safe_results = [
             c for c in reranked 
-            if c.get("rerank_score", float('-inf')) >= self._RERANK_SCORE_THRESHOLD
+            if c.get("rerank_score", float('-inf')) >= _RERANK_SCORE_THRESHOLD
         ]
         
         if not safe_results:

@@ -1,4 +1,3 @@
-
 import os
 import json
 import logging
@@ -52,6 +51,44 @@ TENANTS: list[str] = [
     "surgery_riverside",
 ]
 
+# ── STT 
+
+STT_CONFIDENCE_THRESHOLD: float = float(
+    os.getenv("STT_CONFIDENCE_THRESHOLD", "-0.5")
+)
+
+# Kept for backward compatibility — Phase 2 used CONFIDENCE_THRESHOLD
+CONFIDENCE_THRESHOLD: float = STT_CONFIDENCE_THRESHOLD
+
+# ── Audio 
+# WebRTC VAD requires: 8000, 16000, 32000, or 48000 Hz
+AUDIO_SAMPLE_RATE: int = int(os.getenv("AUDIO_SAMPLE_RATE", "16000"))
+
+# VAD aggressiveness: 0–3. Mode 3 filters most background noise.
+VAD_AGGRESSIVENESS: int = int(os.getenv("VAD_AGGRESSIVENESS", "3"))
+
+# Minimum audio buffered before we attempt STT (prevents cutting off mid-word)
+MIN_SPEECH_DURATION_SECONDS: float = float(
+    os.getenv("MIN_SPEECH_DURATION_SECONDS", "0.8")
+)
+
+# Silence after speech ends before we process the utterance
+END_OF_SPEECH_SILENCE_SECONDS: float = float(
+    os.getenv("END_OF_SPEECH_SILENCE_SECONDS", "0.8")
+)
+
+# Inactivity timeout before "are you still there?" prompt
+MAX_SILENCE_BEFORE_PROMPT_SECONDS: float = float(
+    os.getenv("MAX_SILENCE_BEFORE_PROMPT_SECONDS", "8.0")
+)
+
+# TTS speaking rate
+TTS_SPEAKING_RATE: float = float(os.getenv("TTS_SPEAKING_RATE", "0.92"))
+
+# ── FastAPI 
+CORS_ORIGINS: list[str] = os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000"
+).split(",")
 
 def load_tenant_config(tenant_id: str) -> dict:
     """

@@ -86,8 +86,8 @@ define flow refuse clinical interpretation
 
 define flow log diagnosis request
   user ask for diagnosis
-  bot log only
+  bot refuse and redirect to gp
 
 define flow log medication request
   user ask about medication
-  bot log only
+  bot refuse and redirect to gp

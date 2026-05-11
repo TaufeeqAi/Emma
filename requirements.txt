@@ -17,12 +17,26 @@ groq
 # ── Safety
 nemoguardrails
 
+# ── Voice: STT / TTS / VAD / Audio 
+kokoro
+soundfile
+webrtcvad
+pyaudio
+
+# ── Web Framework 
+fastapi
+uvicorn[standard]
+websockets
+python-multipart
+
 # Utilities
 python-dotenv
 pydantic
 numpy
-
+pydantic
+aiofiles
 
 # testing
 pytest
 pytest-asyncio
+httpx

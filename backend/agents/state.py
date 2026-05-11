@@ -21,7 +21,8 @@ class AgentState(TypedDict):
     retrieval_latency_ms: Optional[float]    
 
     #  Response outputs 
-    raw_response: Optional[str]       
+    raw_response: Optional[str]   
+    response_latency_ms: Optional[float]    
 
     #  Verification outputs 
     final_response: Optional[str]      
