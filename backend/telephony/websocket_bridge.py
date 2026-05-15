@@ -1,1 +1,0 @@
-"""FreeSWITCH ↔ FastAPI bridge."""

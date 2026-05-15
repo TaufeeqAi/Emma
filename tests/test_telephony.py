@@ -1,1 +1,0 @@
-"""FreeSWITCH + SIPp call tests."""

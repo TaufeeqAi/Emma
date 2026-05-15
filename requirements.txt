@@ -38,6 +38,18 @@ datasets
 deepeval       
 openai       
 
+# ── LiveKit Telephony 
+# Core LiveKit Python SDK
+livekit
+# Agents framework (worker, JobContext, AutoSubscribe)
+livekit-agents
+# Server-side API (SIP trunks, dispatch rules, room management, webhooks)
+livekit-api
+# Silero VAD plugin (lightweight, CPU-only, ~2ms/frame at 16kHz)
+livekit-plugins-silero
+# Protocol buffers (SIP messages, webhook event models)
+livekit-protocol
+
 # Utilities
 python-dotenv
 pydantic
@@ -45,8 +57,10 @@ numpy
 pydantic
 aiofiles
 tabulate
+cryptography
 
 # testing
 pytest
 pytest-asyncio
 httpx
+pytest-mock

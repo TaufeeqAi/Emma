@@ -23,11 +23,6 @@ GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
 QDRANT_HOST: str = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT: int = int(os.getenv("QDRANT_PORT", "6333"))
 
-# Langfuse
-LANGFUSE_PUBLIC_KEY: Optional[str] = os.getenv("LANGFUSE_PUBLIC_KEY")
-LANGFUSE_SECRET_KEY: Optional[str] = os.getenv("LANGFUSE_SECRET_KEY")
-LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "http://localhost:3001")
-
 # Embedding model
 EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 EMBEDDING_DIMENSION: int = 384
@@ -121,6 +116,40 @@ RAGAS_CONTEXT_RECALL_THRESHOLD: float = float(
 EVAL_RESULTS_DIR: Path = ROOT_DIR / "eval_results"
 EVAL_RESULTS_DIR.mkdir(exist_ok=True)
 
+
+# ── LiveKit Server 
+LIVEKIT_URL: str = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
+LIVEKIT_WS_URL: str = os.getenv("LIVEKIT_WS_URL", LIVEKIT_URL)
+LIVEKIT_API_KEY: str = os.getenv("LIVEKIT_API_KEY", "devkey")
+LIVEKIT_API_SECRET: str = os.getenv("LIVEKIT_API_SECRET", "secret")
+
+# ── LiveKit SIP 
+LIVEKIT_SIP_DOMAIN: str = os.getenv("LIVEKIT_SIP_DOMAIN", "sip.emma-local:5060")
+SIP_AUTH_USERNAME: str = os.getenv("SIP_AUTH_USERNAME", "emma")
+SIP_AUTH_PASSWORD: str = os.getenv("SIP_AUTH_PASSWORD", "change_me_in_production")
+
+# ── Webhook Security 
+# LiveKit signs webhook requests with HMAC-SHA256 over the raw body.
+# The shared secret is the API secret (or a dedicated webhook secret).
+LIVEKIT_WEBHOOK_SECRET: str = os.getenv("LIVEKIT_WEBHOOK_SECRET", LIVEKIT_API_SECRET)
+
+# ── Agent Worker 
+# Unique name for this EMMA agent type (used in dispatch rules targeting).
+EMMA_AGENT_NAME: str = os.getenv("EMMA_AGENT_NAME", "emma-voice-agent")
+
+# Max concurrent calls per agent worker process (soft limit; worker will queue beyond this)
+EMMA_MAX_CONCURRENT_CALLS: int = int(os.getenv("EMMA_MAX_CONCURRENT_CALLS", "20"))
+
+# ── Tenant Configuration 
+TENANTS: list[str] = [
+    "surgery_greenfield",
+    "surgery_riverside",
+]
+
+DEFAULT_TENANT: str = "surgery_greenfield"  
+
+# ── App Environment 
+APP_ENV: str = os.getenv("APP_ENV", "development")  
 
 def load_tenant_config(tenant_id: str) -> dict:
     """

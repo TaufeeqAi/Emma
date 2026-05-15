@@ -1,15 +1,35 @@
+version: "3.8"
+
+networks:
+  emma_net:
+    driver: bridge
 
 services:
 
-# ── Vector Database
-  qdrant:
-    image: qdrant/qdrant:v1.17.1       
-    container_name: emma_qdrant
+  # ── Redis {required for LiveKit SIP }
+  redis:
+    image: redis:7-alpine
+    container_name: emma_redis
+    networks: [emma_net]
     ports:
-      - "6333:6333"                      
-      - "6334:6334"                      
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Vector Database 
+  qdrant:
+    image: qdrant/qdrant:v1.17.1
+    container_name: emma_qdrant
+    networks: [emma_net]
+    ports:
+      - "6333:6333"
+      - "6334:6334"
     volumes:
-      - qdrant_storage:/qdrant/storage   
+      - qdrant_storage:/qdrant/storage
     environment:
       QDRANT__LOG_LEVEL: INFO
     restart: unless-stopped
@@ -18,11 +38,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  
-   # ── Langfuse Observability Database 
+
+  # ── Langfuse Observability Database 
   postgres:
-    image: postgres:15-alpine           
+    image: postgres:15-alpine
     container_name: emma_postgres
+    networks: [emma_net]
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: langfuse
@@ -38,27 +59,126 @@ services:
 
   # ── Langfuse Observability Platform 
   langfuse:
-    image: langfuse/langfuse:2          
+    image: langfuse/langfuse:2
     container_name: emma_langfuse
+    networks: [emma_net]
     ports:
-      - "3001:3000"                    
+      - "3001:3000"
     environment:
       DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
       NEXTAUTH_SECRET: emma-clone-nextauth-secret-change-in-production
       NEXTAUTH_URL: http://localhost:3001
       SALT: emma-clone-salt-change-in-production
-      TELEMETRY_ENABLED: "false"        # Disable telemetry in dev
+      TELEMETRY_ENABLED: "false"
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
     depends_on:
       postgres:
-        condition: service_healthy      # Wait for Postgres to be ready
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 30s      
+      start_period: 30s
+
+  # ── LiveKit Server 
+  livekit:
+    image: livekit/livekit-server:v1.7
+    container_name: emma_livekit
+    networks: [emma_net]
+    ports:
+      - "7880:7880"     # WebSocket/gRPC
+      - "7881:7881/tcp" # RTC TCP fallback
+      - "6789:6789"     # Prometheus metrics
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "devkey: ItQWun3AD3gudTPMsd8TVGnaXgPoKC02O3TsubpR"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7880/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── LiveKit SIP 
+  livekit-sip:
+    image: livekit/livekit-server:v1.7
+    container_name: emma_livekit_sip
+    networks: [emma_net]
+    ports:
+      - "5060:5060/udp" # SIP UDP
+      - "5060:5060/tcp" # SIP TCP
+    command: >
+      sip
+      --config /etc/livekit.yaml
+      --redis redis://redis:6379
+      --livekit-url ws://livekit:7880
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      LIVEKIT_KEYS: "devkey: ItQWun3AD3gudTPMsd8TVGnaXgPoKC02O3TsubpR"
+    depends_on:
+      - livekit
+      - redis
+    restart: unless-stopped
+
+  # ── EMMA Backend (FastAPI) 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: emma_backend
+    networks: [emma_net]
+    ports:
+      - "8000:8000"
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: ItQWun3AD3gudTPMsd8TVGnaXgPoKC02O3TsubpR
+      LIVEKIT_WS_URL: ws://livekit:7880
+      LIVEKIT_WEBHOOK_SECRET: ItQWun3AD3gudTPMsd8TVGnaXgPoKC02O3TsubpR
+      APP_ENV: development
+      LOG_LEVEL: INFO
+      QDRANT_HOST: qdrant
+      LANGFUSE_HOST: http://langfuse:3000
+    env_file: .env
+    depends_on:
+      livekit:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── EMMA Agent Worker (production pattern — uncomment to use) 
+  # agent:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.backend
+  #   container_name: emma_agent
+  #   networks: [emma_net]
+  #   command: python scripts/start_agent.py
+  #   environment:
+  #     LIVEKIT_URL: ws://livekit:7880
+  #     LIVEKIT_API_KEY: devkey
+  #     LIVEKIT_API_SECRET: ItQWun3AD3gudTPMsd8TVGnaXgPoKC02O3TsubpR
+  #     APP_ENV: production
+  #   env_file: .env
+  #   depends_on:
+  #     livekit:
+  #       condition: service_healthy
+  #   restart: unless-stopped
 
 volumes:
   qdrant_storage:

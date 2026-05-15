@@ -1,14 +1,16 @@
 import logging
 import time
+import asyncio 
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, WebSocket
+from fastapi import FastAPI, HTTPException, UploadFile, WebSocket,Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.config import (
+    APP_ENV,
     AUDIO_SAMPLE_RATE,
     CORS_ORIGINS,
     TENANTS,
@@ -18,9 +20,36 @@ from backend.voice.session_manager import SessionManager
 from backend.voice.stt import STTHandler
 from backend.voice.tts import TTSHandler
 from backend.voice.websocket_handler import VoiceSessionHandler
+from backend.telephony.call_manager import CallManager, get_call_manager 
+from backend.telephony.webhook_handler import LiveKitWebhookHandler
 
 logger = logging.getLogger(__name__)
 
+
+async def _run_agent_safe(coro_fn) -> None:
+    """Wrap agent worker so errors don't crash FastAPI."""
+    try:
+        await coro_fn()
+    except asyncio.CancelledError:
+        logger.info("Embedded agent worker cancelled.")
+    except Exception as exc:
+        logger.error("Embedded agent worker crashed: %s", exc)
+
+
+async def _handle_call_connected(call) -> None:
+    """Callback: SIP participant joined room."""
+    logger.info(
+        "Call connected | room=%s | tenant=%s | caller=%s",
+        call.room_name, call.tenant_id, call.caller_number,
+    )
+
+
+async def _handle_call_ended(call) -> None:
+    """Callback: SIP participant left or room finished."""
+    logger.info(
+        "Call ended | room=%s | tenant=%s | duration=%.1fs",
+        call.room_name, call.tenant_id, call.duration_seconds,
+    )
 
 # ── Lifespan: init expensive singletons once 
 
@@ -43,6 +72,26 @@ async def lifespan(app: FastAPI):
     app.state.stt = STTHandler()
     app.state.tts = TTSHandler()
 
+    #  call management
+    call_manager = get_call_manager()
+    app.state.call_manager = call_manager
+
+    # webhook handler 
+    app.state.webhook_handler = LiveKitWebhookHandler(
+        call_manager=call_manager,
+        on_call_connected=_handle_call_connected,
+        on_call_ended=_handle_call_ended,
+    )
+
+    # Dev mode: run agent worker in-process (NEW)
+    agent_task: Optional[asyncio.Task] = None
+    if APP_ENV == "development":
+        logger.info("Dev mode: starting embedded LiveKit agent worker...")
+        from backend.telephony.livekit_agent import run_worker_async
+        agent_task = asyncio.create_task(
+            _run_agent_safe(run_worker_async),
+            name="emma_livekit_agent_worker",
+        )
     logger.info(
         "EMMA voice server ready | tenants=%s | Kokoro loaded",
         TENANTS,
@@ -59,7 +108,12 @@ async def lifespan(app: FastAPI):
             "callers may be disconnected.",
             active,
         )
-
+    if agent_task and not agent_task.done():
+        agent_task.cancel()
+        try:
+            await agent_task
+        except asyncio.CancelledError:
+            pass
 
 # ── App factory 
 
@@ -77,9 +131,9 @@ def create_app() -> FastAPI:
         title="EMMA Clone — NHS AI Receptionist",
         description=(
             "Multi-tenant AI voice receptionist for NHS GP surgeries. "
-            "Phase 3: Real-Time Voice Pipeline."
+            
         ),
-        version="0.3.0",
+        version="0.5.1",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
@@ -90,7 +144,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -106,9 +160,10 @@ def create_app() -> FastAPI:
         """
         return {
             "status": "ok",
-            "version": "0.3.0",
+            "version": "0.5.1",
             "tenants": TENANTS,
             "active_sessions": app.state.session_manager.active_session_count,
+            "active_calls": app.state.call_manager.active_call_count,
             "tts_ready": app.state.tts is not None,
             "stt_ready": app.state.stt is not None,
         }
@@ -263,6 +318,88 @@ def create_app() -> FastAPI:
         )
 
         await handler.handle_session(websocket)
+
+            # ── LiveKit Webhook 
+
+    @app.post("/livekit-webhook", tags=["Telephony"])
+    async def livekit_webhook(request: Request) -> JSONResponse:
+        """
+        LiveKit webhook endpoint for call lifecycle events.
+        Replaces FreeSWITCH ESL events.
+        """
+        body = await request.body()
+        auth_header = request.headers.get("Authorization", "")
+
+        ok = await app.state.webhook_handler.process_request(body, auth_header)
+        if not ok:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "webhook_validation_failed"},
+            )
+        return JSONResponse(status_code=200, content={"status": "ok"})
+
+    # ──  HTTP: Call Management 
+
+    @app.get("/calls", tags=["Telephony"])
+    async def list_active_calls() -> dict:
+        return {
+            "active_count": app.state.call_manager.active_call_count,
+            "calls":        app.state.call_manager.active_calls_summary,
+        }
+
+    @app.get("/calls/{room_name:path}", tags=["Telephony"])
+    async def get_call(room_name: str) -> dict:
+        call = app.state.call_manager.get_call(room_name)
+        if not call:
+            raise HTTPException(status_code=404, detail=f"Call '{room_name}' not found.")
+        return call.to_dict()
+
+    @app.delete("/calls/{room_name:path}", tags=["Telephony"])
+    async def hangup_call(room_name: str) -> dict:
+        """
+        Administratively disconnect a call by deleting its LiveKit room.
+        """
+        call = app.state.call_manager.get_call(room_name)
+        if not call:
+            raise HTTPException(status_code=404, detail=f"Call '{room_name}' not found.")
+        try:
+            from livekit import api as lk_api
+            from backend.config import LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+            async with lk_api.LiveKitAPI(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET) as client:
+                from livekit.protocol import room as room_proto
+                await client.room.delete_room(
+                    room_proto.DeleteRoomRequest(room=room_name)
+                )
+        except Exception as exc:
+            logger.warning("LiveKit room delete failed for %s: %s", room_name, exc)
+        return {"status": "hangup_sent", "room_name": room_name}
+
+    @app.get("/routing/ddi", tags=["Telephony"])
+    async def get_ddi_routing_table() -> dict:
+        from backend.telephony.ddi_router import get_ddi_router
+        router = get_ddi_router()
+        return {
+            "routes":         router.get_all_routes(),
+            "default_tenant": router.default_tenant,
+        }
+
+    @app.get("/routing/sip-resources", tags=["Telephony"])
+    async def get_sip_resources() -> dict:
+        """List LiveKit SIP trunks and dispatch rules. Admin endpoint."""
+        from backend.telephony.sip_provisioner import SIPProvisioner
+        async with SIPProvisioner() as provisioner:
+            trunks = await provisioner.list_trunks()
+            rules  = await provisioner.list_dispatch_rules()
+        return {
+            "trunks": [
+                {"id": t.sip_trunk_id, "name": t.name, "numbers": list(t.numbers)}
+                for t in trunks
+            ],
+            "dispatch_rules": [
+                {"id": r.sip_dispatch_rule_id, "name": r.name}
+                for r in rules
+            ],
+        }
 
     return app
 
