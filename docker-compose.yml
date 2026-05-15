@@ -147,6 +147,7 @@ services:
       LOG_LEVEL: INFO
       QDRANT_HOST: qdrant
       LANGFUSE_HOST: http://langfuse:3000
+      CORS_ORIGINS:   "http://localhost:3000,http://emma_frontend:3000"
     env_file: .env
     depends_on:
       livekit:
@@ -179,6 +180,32 @@ services:
   #     livekit:
   #       condition: service_healthy
   #   restart: unless-stopped
+
+# ── 7. Next.js Dashboard (Frontend) ───────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        BACKEND_URL: http://emma-backend:8000
+    container_name: emma_frontend
+    networks: [emma_net]
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://emma-backend:8000
+      NODE_ENV:    production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 
 volumes:
   qdrant_storage:

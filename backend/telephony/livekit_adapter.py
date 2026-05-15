@@ -3,7 +3,7 @@ import json
 import logging
 import struct
 import uuid
-from typing import Optional, AsyncIterator
+from typing import Optional, AsyncIterator, Callable
 
 from livekit import rtc
 from livekit.agents import JobContext, AutoSubscribe
@@ -32,7 +32,7 @@ class LiveKitCallAdapter:
     Args:
         ctx:             LiveKit JobContext for this room/call.
         call_manager:    Process-level call registry.
-        session_manager: Phase 3 voice session registry.
+        session_manager: voice session registry.
         stt:             Shared STTHandler.
         tts:             Shared TTSHandler.
         room_name:       LiveKit room name (used as call ID).
@@ -73,16 +73,16 @@ class LiveKitCallAdapter:
         self._running = True
 
         try:
-            # ── Step 1: Publish our output audio track ─────────────────────────
+            # ── Step 1: Publish our output audio track 
             await self._setup_output_track()
 
-            # ── Step 2: Register the call duration watchdog ────────────────────
+            # ── Step 2: Register the call duration watchdog 
             self._timeout_task = asyncio.create_task(
                 self._timeout_watchdog(),
                 name=f"timeout-{self._room_name}",
             )
 
-            # ── Step 3: Subscribe to caller audio and run pipeline ─────────────
+            # ── Step 3: Subscribe to caller audio and run pipeline 
             await self._run_voice_pipeline(sip_participant)
 
         except asyncio.CancelledError:
@@ -135,7 +135,7 @@ class LiveKitCallAdapter:
         Subscribe to the caller's audio track and run the full EMMA pipeline.
 
         Uses a custom WebSocket-like adapter to present the LiveKit audio
-        stream to VoiceSessionHandler without modifying Phase 3 code.
+        stream to VoiceSessionHandler.
         """
         # Wait for the caller's audio track to be published
         audio_track = await self._wait_for_audio_track(sip_participant)
@@ -157,15 +157,18 @@ class LiveKitCallAdapter:
             num_channels=1,
         )
 
-        # Create the Phase 3 WebSocket adapter for this LiveKit call
+        # Create the WebSocket adapter for this LiveKit call
+        from backend.api.events import get_event_bus
         ws_adapter = _LiveKitWebSocketAdapter(
             audio_stream=audio_stream,
             audio_source=self._audio_source,
             audio_bridge=self._audio_bridge,
             room_name=self._room_name,
+            tenant_id=self._tenant_id,       
+            event_publisher=get_event_bus().publish,  
         )
 
-        # Create and run the Phase 3 voice session handler (UNCHANGED)
+        # Create and run the voice session handler (UNCHANGED)
         handler = VoiceSessionHandler(
             tenant_id=self._tenant_id,
             session_manager=self._session_manager,
@@ -183,10 +186,19 @@ class LiveKitCallAdapter:
             trace_id=str(uuid.uuid4()),
         )
 
+        # publish call_streaming event to EventBus
+        from backend.api.events import get_event_bus
+        get_event_bus().publish({
+            "type":       "call_streaming",
+            "room_name":  self._room_name,
+            "tenant_id":  self._tenant_id,
+            "session_id": self._session_id,
+        })
+
         # Subscribe to DTMF data messages
         self._ctx.room.on("data_received", self._handle_data_message)
 
-        # Run the Phase 3 pipeline (blocks until session ends)
+        # Run the pipeline (blocks until session ends)
         try:
             await handler.handle_session(ws_adapter)  # type: ignore[arg-type]
         finally:
@@ -333,13 +345,13 @@ class LiveKitCallAdapter:
         logger.info("CallAdapter cleaned up | room=%s", self._room_name)
 
 
-# ── LiveKit → VoiceSessionHandler adapter ─────────────────────────────────────
+# ── LiveKit → VoiceSessionHandler adapter 
 
 class _LiveKitWebSocketAdapter:
     """
     Presents a WebSocket-like interface backed by LiveKit audio streams.
 
-    This allows VoiceSessionHandler (Phase 3, unchanged) to work with
+    This allows VoiceSessionHandler to work with
     LiveKit audio tracks as if they were browser WebSocket binary frames.
 
     Inbound (caller audio):
@@ -353,7 +365,7 @@ class _LiveKitWebSocketAdapter:
     Control messages:
       send_json() is used by VoiceSessionHandler for transcript/status events.
       We log these but don't need to forward them (no browser to receive them).
-      In Phase 6 (frontend dashboard), we'd forward via a separate SignalR/SSE channel.
+      
     """
 
     def __init__(
@@ -362,11 +374,15 @@ class _LiveKitWebSocketAdapter:
         audio_source: rtc.AudioSource,
         audio_bridge: AudioBridge,
         room_name: str,
+        tenant_id: str = "",
+        event_publisher: Optional[Callable[[dict], None]] = None,
     ) -> None:
         self._audio_stream = audio_stream
         self._audio_source = audio_source
         self._bridge = audio_bridge
         self._room_name = room_name
+        self._tenant_id = tenant_id
+        self._event_publisher = event_publisher
         self._chunk_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._ingest_task: Optional[asyncio.Task] = None
         self._start_ingest()
@@ -425,14 +441,49 @@ class _LiveKitWebSocketAdapter:
 
     async def send_json(self, data: dict) -> None:
         """
-        Log control messages from VoiceSessionHandler.
-        In Phase 6: forward these via WebSocket to the dashboard frontend.
+        Forward VoiceSessionHandler control messages to:
+          1. Logger (always)
+          2. EventBus → SSE → dashboard frontend 
+
+        VoiceSessionHandler emits these event types:
+          {"type": "transcript",     "text": "...", "final": true, "confidence": 0.9}
+          {"type": "agent_response", "agent": "response_agent", "text": "...", "latency_ms": 320}
+          {"type": "safety_check",   "safe": true, "trigger": null}
+          {"type": "tts_start",      "text": "..."}
+          {"type": "tts_end"}
+          {"type": "error",          "message": "..."}
+
+        We enrich each event with room_name and tenant_id before publishing.
         """
         msg_type = data.get("type", "unknown")
         logger.debug(
             "VoiceSession event | room=%s | type=%s | data=%s",
             self._room_name, msg_type, str(data)[:200],
         )
+
+        if self._event_publisher:
+            enriched = {
+                **data,
+                "room_name": self._room_name,
+                "tenant_id": getattr(self, "_tenant_id", None),
+            }
+            # Remap VoiceSessionHandler type names → EmmaEvent type names
+            type_map = {
+                "transcript":     "transcript",
+                "agent_response": "agent_response",
+                "safety_check":   "safety_event",
+                "tts_start":      "tts_start",
+                "tts_end":        "tts_end",
+                "error":          "error",
+            }
+            enriched["type"] = type_map.get(msg_type, msg_type)
+
+            # safety_check → safety_event field mapping
+            if msg_type == "safety_check":
+                enriched["escalated"] = not data.get("safe", True)
+                enriched["trigger"]   = data.get("trigger")
+
+            self._event_publisher(enriched)
 
     async def accept(self) -> None:
         """No-op: LiveKit connection is already established."""
@@ -448,6 +499,6 @@ class _LiveKitWebSocketAdapter:
                 pass
 
     def __getattr__(self, name: str):
-        """Proxy unknown attributes to prevent AttributeError in Phase 3 code."""
+        """Proxy unknown attributes to prevent AttributeError in code."""
         logger.debug("_LiveKitWebSocketAdapter: unhandled attr '%s'", name)
         return lambda *a, **kw: None

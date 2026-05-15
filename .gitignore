@@ -6,3 +6,5 @@ diagnostic.py
 test_model.py
 test_langfuse.py
 eval_results/
+frontend/node_modules/
+frontend/.next/
